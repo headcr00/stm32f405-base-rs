@@ -32,7 +32,7 @@ features = ["stm32f405", "rt"]
 
 # this lets you use `cargo fix`!
 [[bin]]
-name = "embedded-test"
+name = "stm32f405-base"
 test = false
 bench = false
 

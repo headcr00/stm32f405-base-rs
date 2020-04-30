@@ -22,14 +22,17 @@ use cmim::{
     Exception,
 };
 use cmim::Context::Interrupt;
-use core::borrow::BorrowMut;
+use core::borrow::{BorrowMut, Borrow};
+use core::ops::Deref;
 
 
-struct SharedData<'a>{
+struct SharedData {
     something: u8,
-    timer_data: &'a mut Peripherals,
+   // timer_data_stealed: stm32f405::Peripherals,
+    timer_data_normal: &stm32f405::Peripherals
 }
-static SHARED_DATA: Move<SharedData, stm32f4::stm32f405::Interrupt> = Move::new_uninitialized(Interrupt(stm32f405::Interrupt::TIM2));
+static SHARED_DATA: Move<SharedData, stm32f4::stm32f405::Interrupt> =
+    Move::new_uninitialized(Interrupt(stm32f405::Interrupt::TIM2));
 
 #[entry]
 fn main() -> ! {
@@ -44,7 +47,13 @@ fn main() -> ! {
     systick.enable_interrupt();
 
     let mut stm_peripherals = stm32f405::Peripherals::take().unwrap();
-    SHARED_DATA.try_lock(|d| d.timer_data = stm_peripherals.borrow_mut()).ok();
+    SHARED_DATA.try_move(
+        SharedData{
+            something : 0,
+            //timer_data_stealed: unsafe{stm32f405::Peripherals::steal()},
+            timer_data_normal: &stm_peripherals.borrow()
+        }
+    ).ok();
     tim2_setup(&mut stm_peripherals);
     while !systick.has_wrapped() {
     }
@@ -87,7 +96,7 @@ fn tim2_setup(per : &mut Peripherals)
 fn TIM2()
 {
     SHARED_DATA.try_lock(|mut data| {
-        data.timer_data.TIM2.sr.write(|d| d.uif().clear_bit());
+        //data.timer_data.sr.write(|d| d.uif().clear_bit());
         if data.something < 128
         {
             data.something = data.something + 1;
