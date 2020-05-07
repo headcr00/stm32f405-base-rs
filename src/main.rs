@@ -1,18 +1,10 @@
 #![no_std]
 #![no_main]
-use core::{
-    cell::UnsafeCell,
-    cmp::PartialEq,
-    mem::MaybeUninit,
-    result::Result,
-    sync::atomic::{AtomicU8, Ordering},
-};
-extern crate panic_halt; // you can put a breakpoint on `rust_begin_unwind` to catch panics
+use panic_halt; // you can put a breakpoint on `rust_begin_unwind` to catch panics
 // extern crate panic_abort; // requires nightly
 // extern crate panic_itm; // logs messages over ITM; requires ITM support
 // extern crate panic_semihosting; // logs messages to the host stderr; requires a debugger
 mod shared_cell;
-use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m::peripheral::{syst};
 use stm32l4::{
@@ -22,15 +14,6 @@ use stm32l4::{
 use stm32l4x6::interrupt;
 use stm32l4x6::Peripherals;
 use cortex_m_rt::exception;
-use cmim::{
-    Move,
-    Context,
-    Exception,
-};
-use cmim::Context::Interrupt;
-use core::borrow::{BorrowMut, Borrow};
-use core::ops::Deref;
-
 static MY_SHARED_VAR: shared_cell::SharedCell<SharedData> = shared_cell::SharedCell::uninit();
 
 struct SharedData {
@@ -42,8 +25,6 @@ fn main() -> ! {
     let mut systick = peripherals.SYST;
     MY_SHARED_VAR.initialize(SharedData{
         something : 0,
-        // timer_data_stealed: unsafe{stm32l4x6::Peripherals::steal()},
-        // timer_data_normal: &stm_peripherals.borrow()
     });
     systick.set_clock_source(syst::SystClkSource::Core);
     systick.set_reload(1_000);
@@ -103,21 +84,5 @@ fn SysTick()
         {
             d.something = 0;
         }
-    });
+    }).ok();
 }
-/*
-pub fn try_get(&self) -> Result<Option<T>, ()> {
-    match self.context{
-        Self::LOCKED => Ok(None),
-        Self::INIT_AND_IDLE =>{
-            self.state.store(Self::LOCKED, Ordering::SeqCst);
-            let old = unsafe {
-                // Get a pointer to the initialized data
-                let mu_ptr = self.data.get();
-            };
-            self.state.store(Self::INIT_AND_IDLE, Ordering::SeqCst);
-            Ok(old)
-        }
-        Self::UNINIT => Err(())
-    }
-}*/

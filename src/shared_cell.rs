@@ -1,9 +1,7 @@
 use core::{
     cell::UnsafeCell,
-    cmp::PartialEq,
     mem::MaybeUninit,
     result::Result,
-    sync::atomic::{AtomicU8, Ordering},
 };
 
 pub struct SharedCell<T>{
@@ -42,16 +40,7 @@ impl<T>  SharedCell<T>{
     pub fn modify<R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, ()>
     {
         let dat_ref = unsafe {
-            // Create a mutable reference to an initialized MaybeUninit
             let mu_ref = &mut *self.data.get();
-
-            // Create a mutable reference to the initialized data behind
-            // the MaybeUninit. This is fine, because the scope of this
-            // reference can only live to the end of this function, and
-            // cannot be captured by the closure used below.
-            //
-            // Additionally we have a re-entrancy check above, to prevent
-            // creating a duplicate &mut to the inner data
             let dat_ptr = mu_ref.as_mut_ptr();
             &mut *dat_ptr
         };
