@@ -1,8 +1,10 @@
+use cmim;
 use core::{
     cell::UnsafeCell,
     mem::MaybeUninit,
     result::Result,
 };
+use crate::MY_SHARED_PER;
 
 pub struct SharedCell<T>{
     pub data : UnsafeCell<MaybeUninit<T>>,
@@ -47,7 +49,12 @@ impl<T>  SharedCell<T>{
 
         // Call the user's closure, providing access to the data
         let ret = f(dat_ref);
+        self.lol();
         Ok(ret)
+    }
+    fn lol(&self)
+    {
+        let x = MY_SHARED_PER.get_value();
     }
 }
 unsafe impl<T> Sync for SharedCell<T>
