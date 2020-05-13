@@ -5,21 +5,23 @@ use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch
 // extern crate panic_itm; // logs messages over ITM; requires ITM support
 // extern crate panic_semihosting; // logs messages to the host stderr; requires a debugger
 mod shared_cell;
+mod uart_dma;
 use cortex_m_rt::entry;
 use cortex_m::peripheral::{syst};
 use stm32l4::{
     stm32l4x6
 };
 use shared_cell::SharedCell;
-
+use uart_dma::UartDma;
 use stm32l4x6::interrupt;
 
 use stm32l4x6::Peripherals;
 use cortex_m_rt::exception;
 use cortex_m::interrupt::Mutex;
 
-static MY_SHARED_VAR: shared_cell::SharedCell<SharedData> = shared_cell::SharedCell::uninit();
-static MY_SHARED_PER_MUTEXD: Mutex<SharedCell<stm32l4x6::Peripherals>> = Mutex::new(SharedCell::uninit());
+static MY_SHARED_VAR_MUTEXD: Mutex<shared_cell::SharedCell<SharedData>> = Mutex::new(shared_cell::SharedCell::uninit());
+static MY_SHARED_PER: SharedCell<stm32l4x6::Peripherals> = SharedCell::uninit();
+
 
 struct SharedData {
     something: u16,
@@ -30,11 +32,9 @@ fn main() -> ! {
     let mut systick = peripherals.SYST;
     let  stm_peripherals = stm32l4x6::Peripherals::take().unwrap();
 
-    cortex_m::interrupt::free(|cs| MY_SHARED_PER_MUTEXD.borrow(cs).initialize(stm_peripherals));
+    MY_SHARED_PER.initialize(stm_peripherals);
+    cortex_m::interrupt::free(|cs| MY_SHARED_VAR_MUTEXD.borrow(cs).initialize(SharedData{something : 0}));
 
-    MY_SHARED_VAR.initialize(SharedData{
-        something : 0,
-    });
     systick.set_clock_source(syst::SystClkSource::Core);
     systick.set_reload(1_000);
 
@@ -42,37 +42,37 @@ fn main() -> ! {
     systick.enable_counter();
     systick.enable_interrupt();
 
-
+    let uart = UartDma::init().unwrap();
     //tim2_setup(&mut stm_peripherals);
     while !systick.has_wrapped() {
     }
-    cortex_m::interrupt::free(|cs|{
-        if let Some(pers) = MY_SHARED_PER_MUTEXD.borrow(cs).get_value()
+        if let Some(pers) = MY_SHARED_PER.get_value()
         {
             pers.RCC.ahb2enr.write(|w| w.gpioben().set_bit());
             pers.GPIOB.moder.write(|w| w.moder2().output());
             tim2_setup(&pers);
         }
-    });
-
-
-
 
     loop {
         // your code goes here
-         if let Some(value) = MY_SHARED_VAR.get_value().as_ref(){
-            cortex_m::interrupt::free( |cs| {
-                if let Some(pers) = MY_SHARED_PER_MUTEXD.borrow(cs).get_value()
+        cortex_m::interrupt::free(|cs| {
+            if let Some(value) = MY_SHARED_VAR_MUTEXD.borrow(cs).get_value()
+            {
+                if let Some(pers) = MY_SHARED_PER.get_value()
                 {
-                    if value.something > 250
+                   if value.something > 250
                     {
                     pers.GPIOB.odr.write(|w| w.odr2().set_bit());
                     } else {
                     pers.GPIOB.odr.write(|w| w.odr2().clear_bit());
                     }
                 }
-            });
+            }
         }
+
+            uart.do_something()
+        );
+
     }
 }
 
@@ -94,10 +94,10 @@ fn tim2_setup(per : &Peripherals)
 fn TIM2()
 {
     cortex_m::interrupt::free( |cs| {
-        if let Some(p) = MY_SHARED_PER_MUTEXD.borrow(cs).get_value()
+        if let Some(p) = MY_SHARED_PER.get_value()
         {
             p.TIM2.sr.write(|d| d.uif().clear_bit());
-            MY_SHARED_VAR.modify(|d| {
+            MY_SHARED_VAR_MUTEXD.borrow(cs).modify(|d| {
                 d.something = d.something + 1;
                 if d.something == 750
                 {
